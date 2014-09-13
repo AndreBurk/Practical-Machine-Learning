@@ -1,0 +1,153 @@
+---
+title: "Pracitical Machine Learning - Coursera Course Project"
+output: pdf_document
+---
+
+## Synopsis
+
+The task of this project is to create a learning algorithm that is trained on the `traindata` and gets then used on the `testdata` to predict `classe`. `classe` is a factor variable that indicates what type of exercise was done by the participants. There are five levels available each describing a different way of barbell lifting performance.
+
+## Loading Data
+
+```{r cache=TRUE}
+url <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+download.file(url, destfile = "traindata.csv", method = "curl")
+
+url <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+download.file(url, destfile = "testdata.csv", method = "curl")
+```
+
+```{r cache=TRUE}
+traindata <- read.csv("traindata.csv")
+traindata$X <- NULL
+testdata <- read.csv("testdata.csv")
+testdata$X <- NULL
+```
+
+Removing column `X` is done because by reading the csv files this column `X` with only the row numbers in it was created.
+
+## Preprocessing Data
+
+Checking for NA proportion in `traindata`.
+
+```{r}
+mean(is.na(traindata))
+```
+
+`r round(mean(is.na(traindata)), 2)` is very high proportion of NA.  
+To reduce the proportion of NAs in the training set checking if there are columns in the `testdata` that are completely filled with NAs because when later using the model for prediction on the test set the model cannot predict for variables with NA so `traindata` columns can be reduced by these fully missing columns in `testdata`. As there are `r ncol(testdata)` columns in the `testdata` just the first 20 results for complete NA columns in `testdata` will be shown below.
+
+```{r}
+head(apply(is.na(testdata), 2, all), 20)
+```
+
+**TRUE** says there are columns in `testdata` that constist completely of NAs.  
+Next the columns that are completely NA in `testdata` get removed as well in `traindata` as in `testdata`. Since the apply() function for complete NA columns gives back **TRUE** if there are only NAs in the concerned columns the columns that give back **FALSE** have to be selected.
+
+```{r cache=TRUE}
+traindata <- traindata[, apply(is.na(testdata), 2, all) == FALSE]
+testdata <- testdata[, apply(is.na(testdata), 2, all) == FALSE]
+```
+
+From 159 columns before there are now just 59 columns left.  
+Checking both data sets for NA proportion.
+
+```{r}
+c(mean(is.na(traindata)), mean(is.na(testdata)))
+```
+
+In both data sets are no NAs left.  
+Short overview of the data in `traindata`.
+
+```{r}
+str(traindata)
+```
+
+The only structural difference between `traindata` and `testdata` is the last column.
+
+```{r}
+tail(names(traindata), 4); tail(names(testdata), 4)
+```
+
+As the data are preprocessed now and there are no NAs left, next model training will begin.
+
+## Training Model
+
+#### Fitting random Forest model
+
+At first training a random forest model with `caret` package and cross-validation. The train function from `caret` then by default uses 10 fold cv dividing the `traindata` into ten parts, training random forest on 9/10 of the divided training data and predicting the model on the left parts. At the end the average of the different results is taken and the best model gets selected. (linear and binomial models are not possible as `class` is 5 level factor variable so it is a classification problem with more than 0 and 1 levels)
+
+```{r cache=TRUE}
+suppressMessages(library(caret))
+modelFit1 <- train(classe ~ ., data = traindata, method = "rf", trControl = trainControl(method = "cv"))
+modelFit1
+```
+
+Assuming out-of-sample error by using the 10 folds from cross-validation from `modelFit1`:
+
+```{r}
+modelFit1$resample
+min(modelFit1$resample$Accuracy) # expected out-of-sample error
+```
+
+As the fitted model on the training data will always be better then the predicted model this leads to the assumption that the accuracy of the prediction will be more about the minimum accuracy of the 10 fold accuracy results so `r round(min(modelFit1$resample$Accuracy), 3)`.   
+Predicting with random forest model:
+
+```{r cache=TRUE}
+pred1 <- predict(modelFit1, newdata = testdata)
+pred1
+```
+
+Entering the results from random forest prediction `pred1` into the coursera project submission gave back 20 of 20 so 100% accuracy. Deriving from this pred1 will be used as the test data results further on.
+
+#### Fitting rpart model
+
+Fitting a rpart model with pca preprocessing to reduce the dimensions a little bit.
+
+```{r cache=TRUE}
+suppressMessages(library(caret))
+suppressMessages(library(rattle))
+modelFit2 <- train(classe ~., data = traindata, method = "rpart", trControl = trainControl(method = "cv"), preProcess = "pca")
+modelFit2
+fancyRpartPlot(modelFit2$finalModel, main = "Rpart final Model with pca", sub = NULL)
+```
+
+Assuming out-of-sample error again:
+
+```{r}
+modelFit2$resample
+min(modelFit2$resample$Accuracy) # expected out-of-sample error
+```
+
+As before the out-of-sample respectively test data accuracy is assumed to be worse than the accuracy of the trainin data so assuming the test data accuracy to be about `r round(min(modelFit2$resample$Accuracy), 3)`.  
+Making prediction with the rpart model and comparing the prediction results with the random forest predictions.
+
+```{r cache=TRUE}
+suppressMessages(library(caret))
+pred2 <- predict(modelFit2, newdata = testdata)
+confusionMatrix(pred2, pred1)
+```
+
+From the confusionMatrix one can see that model two trained by using rpart and pca just gave back an accuracy of about 70% so the random forest model seems to be much better.
+
+## Create files for prediction submission. (eval=FALSE)
+
+```{r eval=FALSE}
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+pml_write_files(pred1)
+```
+
+## References
+
+<http://groupware.les.inf.puc-rio.br/har>
+
+## Session Info
+```{r echo=FALSE}
+sessionInfo()
+```
